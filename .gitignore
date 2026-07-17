@@ -1,0 +1,31 @@
+# Video files - too large for git
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.mpg
+*.mpeg
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Model weights (large binary files)
+*.caffemodel
+*.pkl
+*.pth
+*.pt
+*.h5
+
+# Source video
+Source/
