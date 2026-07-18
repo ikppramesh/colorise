@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Movie Colorizer Studio</title>
+<style>
+  :root {
+    --bg: #16181d;
+    --panel: #1c1f26;
+    --panel-2: #24272f;
+    --panel-3: #2c303a;
+    --border: #33373f;
+    --text: #e8eaed;
+    --muted: #8b909c;
+    --accent: #4f8cff;
+    --accent-2: #7ee8b8;
+    --warn: #f5b35c;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .hidden { display: none !important; }
+  button { font-family: inherit; }
+
+  /* ── Top bar ─────────────────────────────────────────────── */
+  .topbar {
+    height: 54px;
+    flex: 0 0 auto;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .brand { font-weight: 700; font-size: 0.98rem; white-space: nowrap; }
+  .brand .tag { color: var(--accent-2); font-weight: 500; font-size: 0.8rem; margin-left: 4px; }
+  .topbar .filename {
+    color: var(--muted);
+    font-size: 0.85rem;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status-pill {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--panel-3);
+    color: var(--muted);
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .status-pill.rendering { background: #2a3550; color: var(--accent); }
+  .status-pill.done { background: #1f3a30; color: var(--accent-2); }
+  .status-pill.error { background: #3a2222; color: var(--danger); }
+  .status-pill.cancelled { background: #3a2f1f; color: var(--warn); }
+
+  button.render-btn {
+    background: linear-gradient(135deg, var(--accent), #3f6fd6);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 0.88rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  button.render-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop-btn {
+    background: #3a1f1f;
+    color: var(--danger);
+    border: 1px solid #5a2b2b;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 0.85rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  a.download-btn {
+    background: var(--panel-3);
+    color: var(--accent-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  /* ── Workspace (3 columns) ───────────────────────────────── */
+  .workspace {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+  }
+  .panel {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+    font-weight: 650;
+  }
+
+  /* Media pool (left) */
+  .media-pool { width: 260px; flex: 0 0 260px; border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 26px 10px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--muted);
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: #1a2030; color: var(--text); }
+  .dropzone .icon { font-size: 1.6rem; margin-bottom: 6px; }
+
+  .clip-card { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel-2); }
+  .clip-card canvas { width: 100%; display: block; background: #000; aspect-ratio: 16/9; }
+  .clip-meta { padding: 10px 12px; }
+  .clip-name { font-size: 0.82rem; font-weight: 600; word-break: break-word; margin-bottom: 4px; }
+  .clip-sub { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+
+  /* Preview (center) */
+  .preview-panel { flex: 1 1 auto; padding: 16px; min-width: 0; }
+  .preview-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex: 0 0 auto; }
+  .tab {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tab.active { background: var(--panel-3); color: var(--text); border-color: var(--accent); }
+  .tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .view-body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+  .viewport {
+    flex: 1 1 auto;
+    background: #000;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .viewport video { max-width: 100%; max-height: 100%; }
+  .viewport .placeholder { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 20px; }
+
+  .transport { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex: 0 0 auto; }
+  .transport button {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .transport input[type=range] { flex: 1; accent-color: var(--accent); }
+  .transport .time { font-size: 0.76rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* Preview-frames tab */
+  #previewFramesView { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .pf-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 12px; flex: 0 0 auto; flex-wrap: wrap;
+  }
+  .pf-toolbar label { font-size: 0.76rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .pf-toolbar input[type=number] { width: 56px; background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 7px; font-size: 0.8rem; }
+  .pf-btn {
+    background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 14px; border-radius: 7px; font-size: 0.8rem; font-weight: 650; cursor: pointer;
+  }
+  .pf-btn.primary { background: linear-gradient(135deg, var(--accent), #3f6fd6); border: none; color: white; }
+  .pf-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pf-hint { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
+
+  .pf-grid {
+    flex: 1 1 auto; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px; align-content: start;
+  }
+  .pf-empty { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 40px 20px; margin: auto; }
+  .pf-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .pf-imgs { display: flex; }
+  .pf-img-wrap { position: relative; flex: 1; aspect-ratio: 4/3; background: #000; }
+  .pf-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pf-img-wrap .pf-tag {
+    position: absolute; bottom: 4px; left: 4px;
+    font-size: 0.6rem; font-weight: 700; letter-spacing: .03em;
+    background: rgba(0,0,0,0.6); color: #fff; padding: 2px 6px; border-radius: 4px;
+  }
+  .pf-time { padding: 7px 10px; font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pf-img-wrap { cursor: zoom-in; }
+  .pf-img-wrap img { transition: transform .15s ease, filter .15s ease; }
+  .pf-img-wrap:hover img { transform: scale(1.03); filter: brightness(1.05); }
+
+  /* ── Lightbox ────────────────────────────────────────────── */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(8,9,12,0.94);
+    display: flex; flex-direction: column;
+  }
+  .lightbox-toolbar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .lb-tabs { display: flex; gap: 6px; }
+  .lb-tab {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    padding: 6px 14px; border-radius: 7px; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  }
+  .lb-tab.active { background: var(--panel-3); color: var(--text); border-color: var(--accent); }
+  .lb-nav { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8rem; }
+  .lb-nav button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    width: 30px; height: 30px; border-radius: 7px; cursor: pointer; font-size: 0.9rem;
+  }
+  .lb-zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .lb-zoom button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    width: 30px; height: 30px; border-radius: 7px; cursor: pointer; font-size: 1rem; font-weight: 700;
+  }
+  .lb-zoom .lb-zoom-label { font-size: 0.78rem; color: var(--muted); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+  .lb-zoom .lb-reset { font-size: 0.74rem; font-weight: 600; width: auto; padding: 0 10px; }
+  .lb-close {
+    background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer;
+    width: 32px; height: 32px; border-radius: 7px;
+  }
+  .lb-close:hover { background: var(--panel-2); color: var(--text); }
+
+  .lightbox-stage {
+    flex: 1 1 auto; overflow: hidden; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lightbox-stage img {
+    max-width: 90%; max-height: 90%;
+    transform-origin: center center;
+    user-select: none; -webkit-user-drag: none;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  }
+  .lightbox-stage img.zoomed { cursor: grab; max-width: none; max-height: none; }
+  .lightbox-stage img.zoomed:active { cursor: grabbing; }
+
+  .lightbox-footer {
+    flex: 0 0 auto; text-align: center; padding: 8px;
+    font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Properties (right) */
+  .properties { width: 280px; flex: 0 0 280px; border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+  .field { margin-bottom: 16px; }
+  .field label { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; }
+  .field label .val { color: var(--accent-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  select, input[type=number] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .divider { height: 1px; background: var(--border); margin: 18px 0; }
+
+  /* ── Timeline (bottom) ───────────────────────────────────── */
+  .timeline-panel {
+    flex: 0 0 auto;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px 14px;
+  }
+  .timeline-status {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    margin-bottom: 8px;
+  }
+  .timeline-status #stageText { font-weight: 650; }
+  .timeline-status #statsText { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .timeline-track {
+    position: relative;
+    height: 26px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .timeline-track .segment { position: absolute; top: 0; bottom: 0; opacity: 0.35; }
+  .timeline-track .seg-colorize { left: 0; width: 80%; background: var(--accent); }
+  .timeline-track .seg-pass1 { left: 80%; width: 10%; background: var(--warn); }
+  .timeline-track .seg-pass2 { left: 90%; width: 10%; background: var(--accent-2); }
+  .timeline-track .fill {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .4s ease;
+  }
+  .timeline-track .playhead {
+    position: absolute; top: -2px; bottom: -2px;
+    width: 2px;
+    background: white;
+    left: 0%;
+    box-shadow: 0 0 6px rgba(255,255,255,0.6);
+    transition: left .4s ease;
+  }
+  .timeline-track .seg-label {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 0.65rem; font-weight: 700; color: rgba(0,0,0,0.55);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .timeline-ruler {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .error-banner {
+    margin-top: 10px;
+    background: #2a1a1a;
+    border: 1px solid #4a2626;
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    max-height: 90px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🎞️ Colorizer <span class="tag">Studio</span></div>
+  <div class="filename" id="topFilename">No clip loaded</div>
+  <div class="status-pill" id="statusPill">Idle</div>
+  <button class="stop-btn hidden" id="stopBtn">⏹ Stop</button>
+  <button class="render-btn" id="renderBtn" disabled>▶ Render</button>
+  <a class="download-btn hidden" id="downloadBtn" href="#">⬇ Download</a>
+</header>
+
+<div class="workspace">
+
+  <aside class="panel media-pool">
+    <h3>Media Pool</h3>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📤</div>
+      <div>Click or drop a video</div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*" class="hidden">
+    <div class="clip-card hidden" id="clipCard">
+      <canvas id="thumbCanvas" width="240" height="135"></canvas>
+      <div class="clip-meta">
+        <div class="clip-name" id="clipName"></div>
+        <div class="clip-sub" id="clipSub"></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel preview-panel">
+    <div class="preview-tabs">
+      <button class="tab active" id="tabSource">Source</button>
+      <button class="tab" id="tabOutput" disabled>Colorized</button>
+      <button class="tab" id="tabPreviewFrames" disabled>Preview Frames</button>
+    </div>
+
+    <div class="view-body" id="videoView">
+      <div class="viewport" id="viewport">
+        <div class="placeholder" id="viewportPlaceholder">Load a clip to preview it here</div>
+        <video id="previewVideo" playsinline class="hidden"></video>
+      </div>
+      <div class="transport">
+        <button id="playBtn">▶</button>
+        <input type="range" id="scrubber" min="0" max="1000" value="0">
+        <span class="time" id="timeLabel">00:00 / 00:00</span>
+      </div>
+    </div>
+
+    <div class="view-body hidden" id="previewFramesView">
+      <div class="pf-toolbar">
+        <label>Sample frames <input type="number" id="pfCount" min="2" max="10" value="6"></label>
+        <button class="pf-btn primary" id="pfGenerateBtn">🎨 Generate Preview</button>
+        <button class="pf-btn" id="pfUpdateBtn" disabled>🔄 Update Grade</button>
+        <span class="pf-hint" id="pfHint">Colorizes a few sample frames only — seconds, not hours.</span>
+      </div>
+      <div class="pf-grid" id="pfGrid">
+        <div class="pf-empty">No preview yet — click "Generate Preview" to colorize a handful of sample frames and check the color grade before running the full render.</div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel properties">
+    <h3>Export Settings</h3>
+    <div class="field">
+      <label>Resolution</label>
+      <select id="resolution">
+        <option value="original">Keep original</option>
+        <option value="720p">720p</option>
+        <option value="1080p" selected>1080p</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Bitrate <span class="val" id="bitrateVal">3500 kbps</span></label>
+      <input type="range" id="bitrate" min="500" max="20000" step="100" value="3500">
+    </div>
+
+    <div class="divider"></div>
+    <h3>Color Grade</h3>
+
+    <div class="field">
+      <label>Brightness <span class="val" id="brightnessVal">0.03</span></label>
+      <input type="range" id="brightness" min="-0.3" max="0.3" step="0.01" value="0.03">
+    </div>
+    <div class="field">
+      <label>Contrast <span class="val" id="contrastVal">0.85</span></label>
+      <input type="range" id="contrast" min="0.3" max="1.5" step="0.01" value="0.85">
+    </div>
+    <div class="field">
+      <label>Saturation <span class="val" id="saturationVal">1.10</span></label>
+      <input type="range" id="saturation" min="0" max="2.5" step="0.05" value="1.1">
+    </div>
+    <div class="field">
+      <label>Gamma <span class="val" id="gammaVal">1.12</span></label>
+      <input type="range" id="gamma" min="0.5" max="2" step="0.01" value="1.12">
+    </div>
+    <div class="field">
+      <label>Temperature <span class="val" id="temperatureVal">7500K</span></label>
+      <input type="range" id="temperature" min="3000" max="12000" step="100" value="7500">
+    </div>
+    <div class="field">
+      <label>Temp mix <span class="val" id="mixVal">0.40</span></label>
+      <input type="range" id="mix" min="0" max="1" step="0.05" value="0.4">
+    </div>
+  </aside>
+
+</div>
+
+<footer class="timeline-panel">
+  <div class="timeline-status">
+    <span id="stageText">Idle — load a clip and hit Render</span>
+    <span id="statsText"></span>
+  </div>
+  <div class="timeline-track">
+    <div class="segment seg-colorize"><span class="seg-label" style="left:6px">COLORIZE</span></div>
+    <div class="segment seg-pass1"></div>
+    <div class="segment seg-pass2"></div>
+    <div class="fill" id="timelineFill"></div>
+    <div class="playhead" id="timelinePlayhead"></div>
+  </div>
+  <div class="timeline-ruler" id="timelineRuler">
+    <span>0:00</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+  </div>
+  <div class="error-banner hidden" id="errorBox"></div>
+</footer>
+
+<div class="lightbox hidden" id="lightbox">
+  <div class="lightbox-toolbar">
+    <div class="lb-tabs">
+      <button class="lb-tab" id="lbTabOrig">Original</button>
+      <button class="lb-tab" id="lbTabGraded">Colorized</button>
+    </div>
+    <div class="lb-nav">
+      <button id="lbPrev" title="Previous frame (←)">‹</button>
+      <span id="lbCounter">1 / 1</span>
+      <button id="lbNext" title="Next frame (→)">›</button>
+    </div>
+    <div class="lb-zoom">
+      <button id="lbZoomOut" title="Zoom out">−</button>
+      <span class="lb-zoom-label" id="lbZoomLabel">100%</span>
+      <button id="lbZoomIn" title="Zoom in">+</button>
+      <button class="lb-reset" id="lbZoomReset">Reset</button>
+    </div>
+    <button class="lb-close" id="lbClose" title="Close (Esc)">✕</button>
+  </div>
+  <div class="lightbox-stage" id="lightboxStage">
+    <img id="lightboxImg" src="" alt="">
+  </div>
+  <div class="lightbox-footer" id="lightboxTime"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const dropzone = $('dropzone'), fileInput = $('fileInput');
+const clipCard = $('clipCard'), clipName = $('clipName'), clipSub = $('clipSub'), thumbCanvas = $('thumbCanvas');
+const topFilename = $('topFilename'), statusPill = $('statusPill');
+const renderBtn = $('renderBtn'), stopBtn = $('stopBtn'), downloadBtn = $('downloadBtn');
+const tabSource = $('tabSource'), tabOutput = $('tabOutput'), tabPreviewFrames = $('tabPreviewFrames');
+const videoView = $('videoView'), previewFramesView = $('previewFramesView');
+const viewport = $('viewport'), viewportPlaceholder = $('viewportPlaceholder'), previewVideo = $('previewVideo');
+const playBtn = $('playBtn'), scrubber = $('scrubber'), timeLabel = $('timeLabel');
+const stageText = $('stageText'), statsText = $('statsText'), errorBox = $('errorBox');
+const timelineFill = $('timelineFill'), timelinePlayhead = $('timelinePlayhead');
+const pfGenerateBtn = $('pfGenerateBtn'), pfUpdateBtn = $('pfUpdateBtn'), pfGrid = $('pfGrid'), pfCount = $('pfCount'), pfHint = $('pfHint');
+
+const lightbox = $('lightbox'), lightboxStage = $('lightboxStage'), lightboxImg = $('lightboxImg'), lightboxTime = $('lightboxTime');
+const lbTabOrig = $('lbTabOrig'), lbTabGraded = $('lbTabGraded');
+const lbPrev = $('lbPrev'), lbNext = $('lbNext'), lbCounter = $('lbCounter');
+const lbZoomIn = $('lbZoomIn'), lbZoomOut = $('lbZoomOut'), lbZoomReset = $('lbZoomReset'), lbZoomLabel = $('lbZoomLabel');
+const lbClose = $('lbClose');
+
+const resolutionSel = $('resolution');
+const sliders = ['bitrate','brightness','contrast','saturation','gamma','temperature','mix'];
+
+let selectedFile = null;
+let sourceURL = null;
+let outputURL = null;
+let pollTimer = null;
+let currentTab = 'source';
+let currentJobId = null;
+let previewId = null;
+
+// ── slider live labels ──────────────────────────────────────────
+function fmt(id, v) {
+  if (id === 'bitrate') return `${v} kbps`;
+  if (id === 'temperature') return `${v}K`;
+  return parseFloat(v).toFixed(2);
+}
+sliders.forEach(id => {
+  const input = $(id), label = $(id + 'Val');
+  input.addEventListener('input', () => { label.textContent = fmt(id, input.value); });
+  // once a sample preview exists, re-grade automatically when a slider is released
+  input.addEventListener('change', () => { if (previewId) updateGrade(); });
+});
+resolutionSel.addEventListener('change', () => { if (previewId) updateGrade(); });
+
+// ── file loading ─────────────────────────────────────────────────
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files.length) loadFile(fileInput.files[0]); });
+
+function loadFile(file) {
+  selectedFile = file;
+  sourceURL = URL.createObjectURL(file);
+  topFilename.textContent = file.name;
+  renderBtn.disabled = false;
+
+  viewportPlaceholder.classList.add('hidden');
+  previewVideo.classList.remove('hidden');
+  previewVideo.src = sourceURL;
+  currentTab = 'source';
+  setActiveTab('source');
+  tabOutput.disabled = true;
+  tabPreviewFrames.disabled = false;
+
+  previewId = null;
+  pfUpdateBtn.disabled = true;
+  pfGrid.innerHTML = '<div class="pf-empty">No preview yet — click "Generate Preview" to colorize a handful of sample frames and check the color grade before running the full render.</div>';
+
+  previewVideo.addEventListener('loadedmetadata', function onMeta() {
+    previewVideo.removeEventListener('loadedmetadata', onMeta);
+    const dur = previewVideo.duration;
+    const w = previewVideo.videoWidth, h = previewVideo.videoHeight;
+    const sizeMB = (file.size / (1024*1024)).toFixed(1);
+    clipSub.textContent = `${w}x${h} · ${humanTime(dur)} · ${sizeMB} MB`;
+    clipName.textContent = file.name;
+    clipCard.classList.remove('hidden');
+
+    const seekTo = Math.min(1, dur / 2);
+    previewVideo.currentTime = seekTo;
+  }, { once: true });
+
+  previewVideo.addEventListener('seeked', function onSeek() {
+    previewVideo.removeEventListener('seeked', onSeek);
+    try {
+      const ctx = thumbCanvas.getContext('2d');
+      ctx.drawImage(previewVideo, 0, 0, thumbCanvas.width, thumbCanvas.height);
+    } catch (e) {}
+    previewVideo.currentTime = 0;
+  }, { once: true });
+}
+
+function humanTime(sec) {
+  if (!isFinite(sec)) return '00:00';
+  sec = Math.round(sec);
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  const mm = String(m).padStart(2,'0'), ss = String(s).padStart(2,'0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// ── transport controls ──────────────────────────────────────────
+playBtn.addEventListener('click', () => {
+  if (previewVideo.paused) { previewVideo.play(); playBtn.textContent = '⏸'; }
+  else { previewVideo.pause(); playBtn.textContent = '▶'; }
+});
+previewVideo.addEventListener('ended', () => { playBtn.textContent = '▶'; });
+previewVideo.addEventListener('timeupdate', () => {
+  if (previewVideo.duration) {
+    scrubber.value = (previewVideo.currentTime / previewVideo.duration) * 1000;
+    timeLabel.textContent = `${humanTime(previewVideo.currentTime)} / ${humanTime(previewVideo.duration)}`;
+  }
+});
+scrubber.addEventListener('input', () => {
+  if (previewVideo.duration) {
+    previewVideo.currentTime = (scrubber.value / 1000) * previewVideo.duration;
+  }
+});
+
+// ── tabs ─────────────────────────────────────────────────────────
+function setActiveTab(which) {
+  currentTab = which;
+  tabSource.classList.toggle('active', which === 'source');
+  tabOutput.classList.toggle('active', which === 'output');
+  tabPreviewFrames.classList.toggle('active', which === 'frames');
+
+  const isFrames = which === 'frames';
+  videoView.classList.toggle('hidden', isFrames);
+  previewFramesView.classList.toggle('hidden', !isFrames);
+}
+tabSource.addEventListener('click', () => {
+  if (currentTab === 'source') return;
+  setActiveTab('source');
+  const wasPlaying = !previewVideo.paused;
+  previewVideo.src = sourceURL;
+  if (wasPlaying) previewVideo.play();
+});
+tabOutput.addEventListener('click', () => {
+  if (tabOutput.disabled || currentTab === 'output' || !outputURL) return;
+  setActiveTab('output');
+  const wasPlaying = !previewVideo.paused;
+  previewVideo.src = outputURL;
+  if (wasPlaying) previewVideo.play();
+});
+tabPreviewFrames.addEventListener('click', () => {
+  if (tabPreviewFrames.disabled) return;
+  setActiveTab('frames');
+});
+
+// ── sample-frame color preview ────────────────────────────────────
+function gradeFormData() {
+  const fd = new FormData();
+  fd.append('resolution', resolutionSel.value);
+  fd.append('brightness', $('brightness').value);
+  fd.append('contrast', $('contrast').value);
+  fd.append('saturation', $('saturation').value);
+  fd.append('gamma', $('gamma').value);
+  fd.append('temperature', $('temperature').value);
+  fd.append('mix', $('mix').value);
+  return fd;
+}
+
+let lightboxFrames = [];
+
+function renderFrameGrid(frames) {
+  lightboxFrames = frames;
+  pfGrid.innerHTML = '';
+  frames.forEach((fr, i) => {
+    const card = document.createElement('div');
+    card.className = 'pf-card';
+    const bust = Date.now();
+    card.innerHTML = `
+      <div class="pf-imgs">
+        <div class="pf-img-wrap" data-idx="${i}" data-tab="orig"><img src="/api/preview/image/${previewId}/${fr.orig}"><span class="pf-tag">ORIGINAL</span></div>
+        <div class="pf-img-wrap" data-idx="${i}" data-tab="graded"><img src="/api/preview/image/${previewId}/${fr.graded}?t=${bust}"><span class="pf-tag">COLORIZED</span></div>
+      </div>
+      <div class="pf-time">${humanTime(fr.timestamp)}</div>`;
+    pfGrid.appendChild(card);
+  });
+  pfGrid.querySelectorAll('.pf-img-wrap').forEach(el => {
+    el.addEventListener('click', () => openLightbox(parseInt(el.dataset.idx, 10), el.dataset.tab));
+  });
+}
+
+// ── lightbox: enlarge + zoom/pan a sample frame ───────────────────
+let lbIdx = 0, lbTab = 'graded';
+let zoomLevel = 1, panX = 0, panY = 0;
+let isDragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0;
+
+function frameImgURL(fr, tab) {
+  const bust = Date.now();
+  return tab === 'orig'
+    ? `/api/preview/image/${previewId}/${fr.orig}`
+    : `/api/preview/image/${previewId}/${fr.graded}?t=${bust}`;
+}
+
+function openLightbox(idx, tab) {
+  lbIdx = idx;
+  lbTab = tab;
+  resetZoom();
+  updateLightboxView();
+  lightbox.classList.remove('hidden');
+}
+
+function closeLightbox() {
+  lightbox.classList.add('hidden');
+}
+
+function updateLightboxView() {
+  const fr = lightboxFrames[lbIdx];
+  if (!fr) return;
+  lightboxImg.src = frameImgURL(fr, lbTab);
+  lightboxTime.textContent = `Frame ${lbIdx + 1} of ${lightboxFrames.length} · ${humanTime(fr.timestamp)}`;
+  lbCounter.textContent = `${lbIdx + 1} / ${lightboxFrames.length}`;
+  lbTabOrig.classList.toggle('active', lbTab === 'orig');
+  lbTabGraded.classList.toggle('active', lbTab === 'graded');
+}
+
+function applyTransform() {
+  lightboxImg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+  lightboxImg.classList.toggle('zoomed', zoomLevel > 1);
+  lbZoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
+}
+
+function resetZoom() {
+  zoomLevel = 1; panX = 0; panY = 0;
+  applyTransform();
+}
+
+function zoomBy(delta) {
+  const prev = zoomLevel;
+  zoomLevel = Math.min(6, Math.max(1, zoomLevel + delta));
+  if (zoomLevel <= 1) { panX = 0; panY = 0; }
+  applyTransform();
+}
+
+lbTabOrig.addEventListener('click', () => { lbTab = 'orig'; updateLightboxView(); });
+lbTabGraded.addEventListener('click', () => { lbTab = 'graded'; updateLightboxView(); });
+lbPrev.addEventListener('click', () => { lbIdx = (lbIdx - 1 + lightboxFrames.length) % lightboxFrames.length; resetZoom(); updateLightboxView(); });
+lbNext.addEventListener('click', () => { lbIdx = (lbIdx + 1) % lightboxFrames.length; resetZoom(); updateLightboxView(); });
+lbZoomIn.addEventListener('click', () => zoomBy(0.5));
+lbZoomOut.addEventListener('click', () => zoomBy(-0.5));
+lbZoomReset.addEventListener('click', resetZoom);
+lbClose.addEventListener('click', closeLightbox);
+lightbox.addEventListener('click', (e) => { if (e.target === lightbox || e.target === lightboxStage) closeLightbox(); });
+
+lightboxStage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 0.3 : -0.3);
+}, { passive: false });
+
+lightboxImg.addEventListener('dblclick', () => {
+  if (zoomLevel > 1) resetZoom(); else { zoomLevel = 2.5; applyTransform(); }
+});
+
+lightboxImg.addEventListener('pointerdown', (e) => {
+  if (zoomLevel <= 1) return;
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = panX; panStartY = panY;
+  lightboxImg.setPointerCapture(e.pointerId);
+});
+lightboxImg.addEventListener('pointermove', (e) => {
+  if (!isDragging) return;
+  panX = panStartX + (e.clientX - dragStartX);
+  panY = panStartY + (e.clientY - dragStartY);
+  applyTransform();
+});
+lightboxImg.addEventListener('pointerup', () => { isDragging = false; });
+lightboxImg.addEventListener('pointercancel', () => { isDragging = false; });
+
+document.addEventListener('keydown', (e) => {
+  if (lightbox.classList.contains('hidden')) return;
+  if (e.key === 'Escape') closeLightbox();
+  else if (e.key === 'ArrowRight') lbNext.click();
+  else if (e.key === 'ArrowLeft') lbPrev.click();
+  else if (e.key === '+' || e.key === '=') zoomBy(0.5);
+  else if (e.key === '-') zoomBy(-0.5);
+});
+
+pfGenerateBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  pfGenerateBtn.disabled = true;
+  pfUpdateBtn.disabled = true;
+  pfHint.textContent = 'Colorizing sample frames…';
+  pfGrid.innerHTML = '<div class="pf-empty">Colorizing sample frames — this takes a few seconds…</div>';
+
+  const fd = gradeFormData();
+  fd.append('file', selectedFile);
+  fd.append('num_frames', pfCount.value);
+
+  try {
+    const resp = await fetch('/api/preview/colorize', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.error) {
+      pfGrid.innerHTML = `<div class="pf-empty">${data.error}</div>`;
+      pfHint.textContent = 'Colorizes a few sample frames only — seconds, not hours.';
+      return;
+    }
+    previewId = data.preview_id;
+    renderFrameGrid(data.frames);
+    pfUpdateBtn.disabled = false;
+    pfHint.textContent = 'Adjust the Color Grade sliders on the right, then release — the grid re-grades instantly (no re-colorizing).';
+  } catch (e) {
+    pfGrid.innerHTML = `<div class="pf-empty">Preview failed: ${e}</div>`;
+  } finally {
+    pfGenerateBtn.disabled = false;
+  }
+});
+
+async function updateGrade() {
+  if (!previewId) return;
+  pfUpdateBtn.disabled = true;
+  const fd = gradeFormData();
+  fd.append('preview_id', previewId);
+  try {
+    const resp = await fetch('/api/preview/grade', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.error) return;
+    renderFrameGrid(data.frames);
+  } catch (e) {}
+  finally {
+    pfUpdateBtn.disabled = false;
+  }
+}
+pfUpdateBtn.addEventListener('click', updateGrade);
+
+// ── render / job lifecycle ───────────────────────────────────────
+renderBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  renderBtn.disabled = true;
+  stopBtn.classList.remove('hidden');
+  downloadBtn.classList.add('hidden');
+  errorBox.classList.add('hidden');
+  statusPill.textContent = 'Rendering';
+  statusPill.className = 'status-pill rendering';
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  fd.append('resolution', resolutionSel.value);
+  fd.append('bitrate', $('bitrate').value);
+  fd.append('brightness', $('brightness').value);
+  fd.append('contrast', $('contrast').value);
+  fd.append('saturation', $('saturation').value);
+  fd.append('gamma', $('gamma').value);
+  fd.append('temperature', $('temperature').value);
+  fd.append('mix', $('mix').value);
+
+  let resp, data;
+  try {
+    resp = await fetch('/api/upload', { method: 'POST', body: fd });
+    data = await resp.json();
+  } catch (e) {
+    showError('Upload failed: ' + e);
+    resetToIdle();
+    return;
+  }
+  if (data.error) { showError(data.error); resetToIdle(); return; }
+
+  currentJobId = data.job_id;
+  stageText.textContent = 'Starting…';
+  pollStatus(currentJobId);
+});
+
+stopBtn.addEventListener('click', async () => {
+  if (!currentJobId) return;
+  stopBtn.disabled = true;
+  try {
+    await fetch(`/api/cancel/${currentJobId}`, { method: 'POST' });
+  } catch (e) {}
+  clearInterval(pollTimer);
+  stopBtn.disabled = false;
+  stopBtn.classList.add('hidden');
+  statusPill.textContent = 'Cancelled';
+  statusPill.className = 'status-pill cancelled';
+  stageText.textContent = 'Render cancelled';
+  statsText.textContent = '';
+  timelineFill.style.width = '0%';
+  timelinePlayhead.style.left = '0%';
+  renderBtn.disabled = false;
+});
+
+function resetToIdle() {
+  renderBtn.disabled = false;
+  stopBtn.classList.add('hidden');
+  statusPill.textContent = 'Idle';
+  statusPill.className = 'status-pill';
+}
+
+function showError(msg) {
+  errorBox.classList.remove('hidden');
+  errorBox.textContent = msg;
+  statusPill.textContent = 'Error';
+  statusPill.className = 'status-pill error';
+  stopBtn.classList.add('hidden');
+}
+
+const STAGE_NAMES = {
+  loading_model: 'Loading DDColor model…',
+  colorizing: 'Colorizing frames (DDColor inference)…',
+  encode_pass1: 'Encoding — pass 1 of 2…',
+  encode_pass2: 'Encoding — pass 2 of 2…',
+  starting: 'Starting…'
+};
+
+function pollStatus(jobId) {
+  pollTimer = setInterval(async () => {
+    let resp, data;
+    try {
+      resp = await fetch(`/api/status/${jobId}`);
+      data = await resp.json();
+    } catch (e) { return; }
+
+    if (data.stage === 'error') {
+      clearInterval(pollTimer);
+      showError(data.message || 'Unknown error');
+      renderBtn.disabled = false;
+      return;
+    }
+    if (data.stage === 'cancelled') {
+      clearInterval(pollTimer);
+      return;
+    }
+
+    const pct = data.percent || 0;
+    timelineFill.style.width = pct + '%';
+    timelinePlayhead.style.left = pct + '%';
+    stageText.textContent = STAGE_NAMES[data.stage] || data.stage;
+
+    if (data.stage === 'colorizing' && data.total_frames) {
+      statsText.textContent = `frame ${data.frame}/${data.total_frames}` +
+        (data.fps_proc ? ` · ${data.fps_proc} fr/s` : '') +
+        (data.eta_seconds ? ` · ETA ${humanTime(data.eta_seconds)}` : '') +
+        ` · ${pct.toFixed(1)}%`;
+    } else if (data.stage === 'encode_pass1' || data.stage === 'encode_pass2') {
+      statsText.textContent = `ffmpeg grading + encode · ${pct.toFixed(1)}%`;
+    } else {
+      statsText.textContent = `${pct.toFixed(1)}%`;
+    }
+
+    if (data.stage === 'done') {
+      clearInterval(pollTimer);
+      statusPill.textContent = 'Done';
+      statusPill.className = 'status-pill done';
+      renderBtn.disabled = false;
+      stopBtn.classList.add('hidden');
+      const sizeStr = data.output_size_mb ? `${data.output_size_mb} MB` : '';
+      const timeStr = data.total_seconds ? humanTime(data.total_seconds) : '';
+      stageText.textContent = 'Render complete';
+      statsText.textContent = [sizeStr, timeStr && `in ${timeStr}`].filter(Boolean).join(' · ');
+
+      outputURL = `/api/output/${jobId}`;
+      tabOutput.disabled = false;
+      setActiveTab('output');
+      previewVideo.src = outputURL;
+
+      downloadBtn.href = outputURL + '?download=1';
+      downloadBtn.classList.remove('hidden');
+    }
+  }, 1500);
+}
+</script>
+</body>
+</html>

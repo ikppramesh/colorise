@@ -29,3 +29,14 @@ __pycache__/
 
 # Source video
 Source/
+*.webm
+
+# Colorized movie outputs (large, per-run)
+Output/
+
+# WebUI Studio: runtime job data (uploads, in-progress jobs, rendered
+# outputs, sample-frame previews) — all generated at runtime, never source
+WebUI/uploads/
+WebUI/jobs/
+WebUI/outputs/
+WebUI/previews/
