@@ -113,6 +113,20 @@ def upload():
     bitrate = max(500, min(bitrate, 20000))
     grade = build_grade_filter(**grade_params_from_form(request.form))
 
+    audio_mode = request.form.get('audio_mode', 'off')
+    if audio_mode not in ('off', 'stereo', 'surround51'):
+        return jsonify({'error': 'invalid audio_mode'}), 400
+
+    target_size_gb_raw = request.form.get('target_size_gb', '').strip()
+    target_size_gb = None
+    if target_size_gb_raw:
+        try:
+            target_size_gb = float(target_size_gb_raw)
+        except ValueError:
+            return jsonify({'error': 'invalid target_size_gb'}), 400
+        if target_size_gb <= 0:
+            return jsonify({'error': 'target_size_gb must be positive'}), 400
+
     job_id = uuid.uuid4().hex[:12]
     os.makedirs(os.path.join(JOBS_DIR, job_id), exist_ok=True)
     input_path = os.path.join(UPLOAD_DIR, f'{job_id}{ext}')
@@ -129,7 +143,10 @@ def upload():
         '--resolution', resolution,
         '--video-bitrate-kbps', str(bitrate),
         '--grade', grade,
+        '--audio-mode', audio_mode,
     ]
+    if target_size_gb is not None:
+        cmd += ['--target-size-gb', str(target_size_gb)]
     # start_new_session=True puts worker.py in its own process group, so
     # cancelling can kill it *and* any ffmpeg child it spawned in one shot.
     proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT, cwd=ROOT, start_new_session=True)

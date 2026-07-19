@@ -33,7 +33,14 @@ ap.add_argument('--status-file', required=True)
 ap.add_argument('--tmp', required=True)
 ap.add_argument('--resolution', choices=['original', '720p', '1080p'], default='1080p')
 ap.add_argument('--video-bitrate-kbps', type=int, default=3500)
+ap.add_argument('--target-size-gb', type=float, default=None,
+                 help='if set, compute video bitrate from this output-size cap instead of --video-bitrate-kbps')
 ap.add_argument('--audio-bitrate-kbps', type=int, default=192)
+ap.add_argument('--audio-mode', choices=['off', 'stereo', 'surround51'], default='off',
+                 help='off: plain AAC re-encode; stereo: loudness-normalize + denoise; '
+                      'surround51: upmix to 5.1 + Dolby Digital Plus (E-AC3) — not real Dolby Atmos, '
+                      'that requires a licensed Dolby encoder unavailable to ffmpeg')
+ap.add_argument('--surround-bitrate-kbps', type=int, default=448)
 ap.add_argument('--grade', default='eq=brightness=0.03:contrast=0.85:saturation=1.1:gamma=1.12,'
                                     'colortemperature=temperature=7500:mix=0.4:pl=1')
 ap.add_argument('--input-size', type=int, default=512)
@@ -129,11 +136,18 @@ try:
     scale = SCALE_MAP[args.resolution]
     vf_chain = args.grade if scale is None else f'{args.grade},scale={scale}'
 
-    video_kbps = args.video_bitrate_kbps
+    # ── Bitrate: either fixed, or derived from a target output-size cap ───────
+    audio_kbps_for_budget = args.surround_bitrate_kbps if args.audio_mode == 'surround51' else args.audio_bitrate_kbps
+    if args.target_size_gb is not None and duration_sec > 0:
+        target_bits = args.target_size_gb * 8 * (1024 ** 3)
+        audio_bits = audio_kbps_for_budget * 1000 * duration_sec
+        video_kbps = max(300, int((target_bits - audio_bits) / duration_sec / 1000))
+    else:
+        video_kbps = args.video_bitrate_kbps
     maxrate = int(video_kbps * 1.5)
     bufsize = int(video_kbps * 2)
 
-    def run_ffmpeg_with_progress(cmd, stage_name):
+    def run_ffmpeg_with_progress(cmd, stage_name, **extra_status):
         progress_file = TMP + f'.progress_{stage_name}.txt'
         full_cmd = cmd + ['-progress', progress_file, '-nostats']
         proc = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -151,7 +165,7 @@ try:
                         break
                 if out_time_ms is not None and duration_sec > 0:
                     pct = max(0, min(100, out_time_ms / 1_000_000 / duration_sec * 100))
-                    write_status(stage=stage_name, local_percent=pct, frame=n, total_frames=total)
+                    write_status(stage=stage_name, local_percent=pct, frame=n, total_frames=total, **extra_status)
             except FileNotFoundError:
                 pass
         proc.wait()
@@ -169,24 +183,43 @@ try:
         '-pass', '1', '-an', '-f', 'mp4',
     ] + (['/dev/null'])
 
+    # ── Audio enhancement ──────────────────────────────────────────────────────
+    # "surround51" upmixes to 5.1 and encodes as E-AC3 (Dolby Digital Plus) — a
+    # real Dolby-branded codec ffmpeg can produce. It is NOT Dolby Atmos: Atmos
+    # is object-based audio requiring Dolby's own licensed encoder, which isn't
+    # available here. loudnorm/afftdn clean up old, often noisy/quiet mono tracks.
+    AUDIO_FILTERS = {
+        'off': None,
+        'stereo': 'loudnorm=I=-16:TP=-1.5:LRA=11,afftdn=nf=-25',
+        'surround51': 'loudnorm=I=-16:TP=-1.5:LRA=11,afftdn=nf=-25,surround=chl_out=5.1',
+    }
+    audio_filter = AUDIO_FILTERS[args.audio_mode]
+
+    if args.audio_mode == 'surround51':
+        audio_codec_args = ['-c:a', 'eac3', '-b:a', f'{args.surround_bitrate_kbps}k', '-ac', '6']
+    else:
+        audio_codec_args = ['-c:a', 'aac', '-b:a', f'{args.audio_bitrate_kbps}k']
+
     audio_in_cmd = ['-i', INPUT]
     pass2_cmd = [
         'ffmpeg', '-y', '-i', TMP] + audio_in_cmd + [
         '-vf', vf_chain,
+    ] + (['-af', audio_filter] if audio_filter else []) + [
         '-c:v', 'libx264', '-b:v', f'{video_kbps}k',
         '-maxrate', f'{maxrate}k', '-bufsize', f'{bufsize}k',
         '-preset', 'medium', '-passlogfile', PASSLOG,
         '-pass', '2',
-        '-c:a', 'aac', '-b:a', f'{args.audio_bitrate_kbps}k',
+    ] + audio_codec_args + [
         '-map', '0:v:0', '-map', '1:a?',
         OUTPUT
     ]
 
-    write_status(stage='encode_pass1', local_percent=0, frame=n, total_frames=total)
-    run_ffmpeg_with_progress(pass1_cmd, 'encode_pass1')
+    encode_extra = {'video_kbps': video_kbps, 'target_size_gb': args.target_size_gb}
+    write_status(stage='encode_pass1', local_percent=0, frame=n, total_frames=total, **encode_extra)
+    run_ffmpeg_with_progress(pass1_cmd, 'encode_pass1', **encode_extra)
 
-    write_status(stage='encode_pass2', local_percent=0, frame=n, total_frames=total)
-    run_ffmpeg_with_progress(pass2_cmd, 'encode_pass2')
+    write_status(stage='encode_pass2', local_percent=0, frame=n, total_frames=total, **encode_extra)
+    run_ffmpeg_with_progress(pass2_cmd, 'encode_pass2', **encode_extra)
 
     for ext in ['-0.log', '-0.log.mbtree']:
         p = PASSLOG + ext
@@ -200,7 +233,8 @@ try:
     write_status(stage='done', percent=100, frame=n, total_frames=total,
                  output_size_mb=round(out_size_mb, 1),
                  colorize_seconds=round(colorize_elapsed),
-                 total_seconds=round(total_elapsed))
+                 total_seconds=round(total_elapsed),
+                 **encode_extra)
 
 except Exception:
     fail(traceback.format_exc())

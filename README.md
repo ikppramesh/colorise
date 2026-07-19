@@ -35,6 +35,19 @@ Scroll wheel or `+`/`-` to zoom (up to 6x), drag to pan once zoomed, double-clic
 
 The timeline strip is weighted by where time actually goes — colorize (80%), encode pass 1 (10%), encode pass 2 (10%) — and fills accordingly, with frame count / fr/s / ETA from the worker. **Stop** kills the render's whole process group (worker **and** any ffmpeg pass it spawned), not just the parent, so nothing is left running in the background.
 
+### Cap the output size, and enhance the audio
+
+![Export Settings: Max File Size preset and 5.1 Surround + Dolby Digital Plus audio mode](assets/screenshots/06_size_cap_and_audio.png)
+
+**Max File Size** — pick a preset (≤1/2/3/5/8 GB, or Custom) instead of guessing a bitrate. The worker computes the video bitrate from the *exact* colorized frame count/duration and whatever audio bitrate is actually in use, so a 2GB cap on a 2h05m film correctly lands at ~1838 kbps video, not a bitrate that assumes some other runtime. Picking "No limit" restores manual bitrate control. This is a real target, not a guarantee — 2-pass ABR gets close but the status bar tells you honestly whether the finished file landed within or slightly over the cap.
+
+**Audio Enhance** — three modes:
+- **Off** — plain AAC re-encode, unchanged.
+- **Stereo enhance** — loudness normalization (EBU R128) + FFT denoise, cleans up thin/noisy old mono or stereo dialogue tracks without changing channel count.
+- **5.1 Surround + Dolby Digital Plus** — same cleanup, then upmixed to 5.1 via ffmpeg's `surround` filter and encoded as E-AC3 (verified: proper 6-channel 5.1(side) stream, muxes correctly into MP4).
+
+Note what this isn't: **not real Dolby Atmos**, which is object-based audio requiring Dolby's own licensed encoder — unavailable to ffmpeg or any open-source tool. E-AC3/5.1 is a genuine Dolby-branded format, just not Atmos. For the same licensing reason, **Dolby Vision isn't offered either** — and even if it were available, colorized B&W source has no real HDR luminance data to justify dynamic HDR metadata; tagging an SDR file as HDR would mislabel it rather than improve it.
+
 ### Run it
 
 ```bash

@@ -441,8 +441,37 @@
       </select>
     </div>
     <div class="field">
+      <label>Max File Size</label>
+      <select id="sizeCapPreset">
+        <option value="none">No limit (use bitrate slider)</option>
+        <option value="1">≤ 1 GB</option>
+        <option value="2" selected>≤ 2 GB</option>
+        <option value="3">≤ 3 GB</option>
+        <option value="5">≤ 5 GB</option>
+        <option value="8">≤ 8 GB</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </div>
+    <div class="field hidden" id="sizeCapCustomField">
+      <label>Custom size (GB)</label>
+      <input type="number" id="sizeCapCustom" min="0.1" max="200" step="0.1" value="2">
+    </div>
+    <div class="field" id="bitrateField">
       <label>Bitrate <span class="val" id="bitrateVal">3500 kbps</span></label>
       <input type="range" id="bitrate" min="500" max="20000" step="100" value="3500">
+    </div>
+    <div class="pf-hint" id="sizeCapHint" style="margin-left:0; margin-bottom:16px;"></div>
+
+    <div class="divider"></div>
+    <h3>Audio Enhance</h3>
+    <div class="field">
+      <label>Mode</label>
+      <select id="audioMode">
+        <option value="off" selected>Off (plain AAC)</option>
+        <option value="stereo">Stereo enhance (normalize + denoise)</option>
+        <option value="surround51">5.1 Surround + Dolby Digital Plus</option>
+      </select>
+      <div class="pf-hint" id="audioHint" style="margin-top:6px; margin-left:0;">Upmixes/cleans up old mono or stereo tracks. Not real Dolby Atmos — that needs a licensed Dolby encoder ffmpeg can't provide.</div>
     </div>
 
     <div class="divider"></div>
@@ -541,6 +570,9 @@ const lbZoomIn = $('lbZoomIn'), lbZoomOut = $('lbZoomOut'), lbZoomReset = $('lbZ
 const lbClose = $('lbClose');
 
 const resolutionSel = $('resolution');
+const audioModeSel = $('audioMode');
+const sizeCapPreset = $('sizeCapPreset'), sizeCapCustomField = $('sizeCapCustomField'), sizeCapCustom = $('sizeCapCustom');
+const bitrateField = $('bitrateField'), sizeCapHint = $('sizeCapHint');
 const sliders = ['bitrate','brightness','contrast','saturation','gamma','temperature','mix'];
 
 let selectedFile = null;
@@ -550,6 +582,41 @@ let pollTimer = null;
 let currentTab = 'source';
 let currentJobId = null;
 let previewId = null;
+let clipDurationSec = null;
+
+// ── max file size cap: null = no cap (use bitrate slider) ────────
+function currentTargetSizeGB() {
+  if (sizeCapPreset.value === 'none') return null;
+  if (sizeCapPreset.value === 'custom') {
+    const v = parseFloat(sizeCapCustom.value);
+    return (v > 0) ? v : null;
+  }
+  return parseFloat(sizeCapPreset.value);
+}
+
+function updateSizeCapUI() {
+  const targetGB = currentTargetSizeGB();
+  sizeCapCustomField.classList.toggle('hidden', sizeCapPreset.value !== 'custom');
+  bitrateField.classList.toggle('hidden', targetGB !== null);
+
+  if (targetGB === null) {
+    sizeCapHint.textContent = '';
+    return;
+  }
+  if (!clipDurationSec) {
+    sizeCapHint.textContent = `Targeting ${targetGB} GB — load a clip to see the estimated bitrate.`;
+    return;
+  }
+  const audioKbps = audioModeSel.value === 'surround51' ? 448 : 192;
+  const targetBits = targetGB * 8 * 1024 ** 3;
+  const audioBits = audioKbps * 1000 * clipDurationSec;
+  const videoKbps = Math.max(300, Math.round((targetBits - audioBits) / clipDurationSec / 1000));
+  sizeCapHint.textContent = `Targeting ${targetGB} GB for this ${humanTime(clipDurationSec)} clip ≈ ${videoKbps} kbps video.`;
+}
+sizeCapPreset.addEventListener('change', updateSizeCapUI);
+sizeCapCustom.addEventListener('input', updateSizeCapUI);
+audioModeSel.addEventListener('change', updateSizeCapUI);
+updateSizeCapUI();
 
 // ── slider live labels ──────────────────────────────────────────
 function fmt(id, v) {
@@ -598,6 +665,9 @@ function loadFile(file) {
     clipSub.textContent = `${w}x${h} · ${humanTime(dur)} · ${sizeMB} MB`;
     clipName.textContent = file.name;
     clipCard.classList.remove('hidden');
+
+    clipDurationSec = dur;
+    updateSizeCapUI();
 
     const seekTo = Math.min(1, dur / 2);
     previewVideo.currentTime = seekTo;
@@ -861,6 +931,9 @@ renderBtn.addEventListener('click', async () => {
   fd.append('file', selectedFile);
   fd.append('resolution', resolutionSel.value);
   fd.append('bitrate', $('bitrate').value);
+  const targetGB = currentTargetSizeGB();
+  if (targetGB !== null) fd.append('target_size_gb', String(targetGB));
+  fd.append('audio_mode', audioModeSel.value);
   fd.append('brightness', $('brightness').value);
   fd.append('contrast', $('contrast').value);
   fd.append('saturation', $('saturation').value);
@@ -955,7 +1028,8 @@ function pollStatus(jobId) {
         (data.eta_seconds ? ` · ETA ${humanTime(data.eta_seconds)}` : '') +
         ` · ${pct.toFixed(1)}%`;
     } else if (data.stage === 'encode_pass1' || data.stage === 'encode_pass2') {
-      statsText.textContent = `ffmpeg grading + encode · ${pct.toFixed(1)}%`;
+      const capNote = data.target_size_gb ? ` · targeting ${data.target_size_gb}GB (${data.video_kbps} kbps video)` : '';
+      statsText.textContent = `ffmpeg grading + encode${capNote} · ${pct.toFixed(1)}%`;
     } else {
       statsText.textContent = `${pct.toFixed(1)}%`;
     }
@@ -968,8 +1042,15 @@ function pollStatus(jobId) {
       stopBtn.classList.add('hidden');
       const sizeStr = data.output_size_mb ? `${data.output_size_mb} MB` : '';
       const timeStr = data.total_seconds ? humanTime(data.total_seconds) : '';
+      let capStr = '';
+      if (data.target_size_gb && data.output_size_mb) {
+        const outGB = data.output_size_mb / 1024;
+        capStr = outGB <= data.target_size_gb
+          ? `within ${data.target_size_gb}GB cap ✓`
+          : `over ${data.target_size_gb}GB cap ⚠`;
+      }
       stageText.textContent = 'Render complete';
-      statsText.textContent = [sizeStr, timeStr && `in ${timeStr}`].filter(Boolean).join(' · ');
+      statsText.textContent = [sizeStr, timeStr && `in ${timeStr}`, capStr].filter(Boolean).join(' · ');
 
       outputURL = `/api/output/${jobId}`;
       tabOutput.disabled = false;
